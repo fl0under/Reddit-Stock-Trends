@@ -9,27 +9,31 @@ import yfinance as yf
 
 class FinanceAnalysis:
 
-    def analyze(self):
+    def analyze(self, best_n=25):
         # Load data from file, generate data by running the `ticker_counts.py` script
         data_directory = Path('./data')
         input_path = data_directory / f'{dt.date.today()}_tick_df.csv'
 
         df_tick = pd.read_csv(input_path).sort_values(by=['Mentions', 'Ticker'], ascending=False)
 
-        columns = ['Ticker', 'Name', 'Industry', 'PreviousClose', 'Low5d', 'High5d', 'ChangePercent1d', 'ChangePercent5d',
-                   'ChangePercent1mo']
+        columns = ['Name', 'Industry', 'Previous Close', '5d Low', '5d High', '1d Change (%)', '5d Change (%)',
+                   '1mo Change (%)']
+        df_best = df_tick.head(best_n)
+
+        # Add ASX code to tickers
+        df_best['Ticker'] = [v + '.AX' for v in df_best['Ticker'].tolist()]
 
         # Activate all tickers' info in parallel
-        self.tickers = yf.Tickers(df_tick['Ticker'].tolist())
+        self.tickers = yf.Tickers(df_best['Ticker'].tolist())
         with concurrent.futures.ThreadPoolExecutor() as executor:
             executor.map(lambda t: t.info, self.tickers.tickers)
-        self.data = self.tickers.download(period='1mo', group_by='ticker', progress=True)
+        #self.data = self.tickers.download(period='1mo', group_by='ticker', progress=True)
+        self.data = yf.download([v.info['symbol'] for v in self.tickers.tickers] ,period='1mo', group_by='ticker', progress=True)
 
-        fin_data = [self.get_ticker_info(tick) for tick in df_tick['Ticker']]
-        df_best = pd.DataFrame(fin_data, columns=columns)
+        df_best[columns] = df_best['Ticker'].apply(self.get_ticker_info)
 
         # Save to file to load into yahoo analysis script
-        output_path = data_directory / f'{dt.date.today()}_financial_df.csv'
+        output_path = data_directory / f'df_best_{best_n}.csv'
         df_best.to_csv(output_path, index=False)
         print(df_best.head())
 
@@ -42,7 +46,9 @@ class FinanceAnalysis:
 
     def get_ticker_info(self, ticker):
         # Standard Data
-        ticker = getattr(self.tickers.tickers, ticker)
+        # getattr doesn't work for ASX codes as they contain a period
+        ticker = [v for v in self.tickers.tickers if v.ticker==ticker][0]
+        #ticker = getattr(self.tickers.tickers, ticker)
         ticker_name = ticker.info.get('longName')
         ticker_industry = ticker.info.get('industry')
 
@@ -62,11 +68,12 @@ class FinanceAnalysis:
         change5d = self.get_change(df_hist_5d)
         change1mo = self.get_change(df_hist_1mo)
 
-        return [ticker.ticker, ticker_name, ticker_industry, ticker_close, low5d, high5d, change1d, change5d, change1mo]
+        return pd.Series([ticker_name, ticker_industry, ticker_close, low5d, high5d, change1d, change5d, change1mo])
 
-def main():
-    analyzer = FinanceAnalysis()
-    analyzer.analyze()
 
 if __name__ == '__main__':
-    main()
+    analyzer = FinanceAnalysis()
+    if len(sys.argv) > 1:
+        analyzer.analyze(int(sys.argv[1]))
+    else:
+        analyzer.analyze()
