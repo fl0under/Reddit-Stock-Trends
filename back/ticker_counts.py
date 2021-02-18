@@ -17,12 +17,13 @@ import praw
 from tqdm import tqdm
 
 Post = namedtuple('Post', 'id,title,score,comments,upvote_ratio,total_awards')
+Comment = namedtuple('Comment', 'id,body')
 
 
 class TickerCounts:
 
     def __init__(self):
-        self.webscraper_limit = 2000
+        self.webscraper_limit = 40
         config = configparser.ConfigParser()
         config.read('./config/config.ini')
         self.subreddits = json.loads(config['FilteringOptions']['Subreddits'])
@@ -34,7 +35,7 @@ class TickerCounts:
         exclude = stop_words | block_words
         self.keep_tickers = tickers - exclude  # Remove words/tickers in exclude
 
-    def extract_ticker(self, text: str, pattern: str = r'(?<=\$)[A-Za-z]+|[A-Z]{2,}') -> Set[str]:
+    def extract_ticker(self, text: str, pattern: str = r'(?<=\$)[A-Za-z0-9]+|[A-Z0-9]{2,}') -> Set[str]:
         """Simple Regex to get tickers from text."""
         ticks = set(re.findall(pattern, str(text)))
         return ticks & self.keep_tickers  # Keep overlap
@@ -55,6 +56,18 @@ class TickerCounts:
                 post.total_awards_received,
             )
 
+    def _get_comments(self, ids):
+        reddit = praw.Reddit('ClientSecrets')
+        for id in tqdm(ids, desc='Retriving comments', total=self.webscraper_limit):
+            submission = reddit.submission(id=id)
+            submission.comments.replace_more(limit=None)
+            for comment in submission.comments.list():
+                yield Comment(
+                        id,
+                        comment.body
+                )
+
+
     def get_data(self):
         df_posts = pd.DataFrame(self._get_posts())
 
@@ -62,9 +75,20 @@ class TickerCounts:
         tickers = df_posts['title'].apply(self.extract_ticker)
         counts = Counter(chain.from_iterable(tickers))
 
+        # Extract tickers from comments & count them
+        df_comments = pd.DataFrame(self._get_comments(df_posts['id']))
+
+        tickers_comments = df_comments['body'].apply(self.extract_ticker)
+        counts_comments = Counter(chain.from_iterable(tickers_comments))
+
+        df_tick_comments = pd.DataFrame(counts_comments.items(), columns=['Ticker', 'Mentions'])
+        #df_tick_comments = df_tick_comments[df_tick_comments['Mentions'] > 3]
+        df_tick_comments = df_tick_comments.sort_values(by=['Mentions'], ascending=False)
+        print(df_tick_comments.head())
+
         # Create DataFrame of just mentions & remove any occurring less than 3 or less
         df_tick = pd.DataFrame(counts.items(), columns=['Ticker', 'Mentions'])
-        df_tick = df_tick[df_tick['Mentions'] > 3]
+        #df_tick = df_tick[df_tick['Mentions'] > 3]
         df_tick = df_tick.sort_values(by=['Mentions'], ascending=False)
 
         data_directory = Path('./data')
