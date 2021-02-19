@@ -10,6 +10,13 @@ See trending stock tickers on Reddit and check Stock perfomance <br><br>
 
 </p>
 
+## Changes
+Compared to the original repo, this version has been modified to:
+
+- [x] Look for ASX tickers
+- [x] Extract ticker mentions from comments
+- [x] By default only look over submissions made in the last 24 hours
+
 ## Backend
 
 ### Reddit API
