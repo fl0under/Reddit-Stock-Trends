@@ -108,6 +108,9 @@ class TickerCounts:
         df_tick.to_csv(output_path, index=False)
         print(df_tick.head())
 
+        output_path = data_directory / f'{dt.date.today()}_tick_comments_df.csv'
+        df_tick_comments.to_csv(output_path, index=False)
+
 def main():
     ticket = TickerCounts()
     ticket.get_data()
