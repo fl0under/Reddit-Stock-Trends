@@ -16,21 +16,23 @@ import pandas as pd
 import praw
 from tqdm import tqdm
 
-Post = namedtuple('Post', 'id,title,score,comments,upvote_ratio,total_awards')
-Comment = namedtuple('Comment', 'id,body')
+import pprint
+
+Post = namedtuple('Post', 'id,title,score,comments,upvote_ratio,total_awards,created_utc')
+Comment = namedtuple('Comment', 'id,body,created_utc')
 
 
 class TickerCounts:
 
     def __init__(self):
-        self.webscraper_limit = 40
+        self.webscraper_limit = 200
         config = configparser.ConfigParser()
         config.read('./config/config.ini')
         self.subreddits = json.loads(config['FilteringOptions']['Subreddits'])
 
         stop_words = set(json.loads(config['FilteringOptions']['StopWords']))
         block_words = set(json.loads(config['FilteringOptions']['BlockWords']))
-        with open('./config/tickers.json') as f:
+        with open('./config/ASX.json') as f:
             tickers = set(json.load(f))
         exclude = stop_words | block_words
         self.keep_tickers = tickers - exclude  # Remove words/tickers in exclude
@@ -47,14 +49,19 @@ class TickerCounts:
         new_bets = reddit.subreddit(subreddits).new(limit=self.webscraper_limit)
 
         for post in tqdm(new_bets, desc='Selecting relevant data from webscraper', total=self.webscraper_limit):
-            yield Post(
-                post.id,
-                post.title,
-                post.score,
-                post.num_comments,
-                post.upvote_ratio,
-                post.total_awards_received,
-            )
+            created_utc = post.created_utc
+            if dt.datetime.fromtimestamp(created_utc) > (dt.datetime.now().astimezone(tz=dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(hours=24)):
+                yield Post(
+                    post.id,
+                    post.title,
+                    post.score,
+                    post.num_comments,
+                    post.upvote_ratio,
+                    post.total_awards_received,
+                    post.created_utc
+                )
+            else:
+                break
 
     def _get_comments(self, ids):
         reddit = praw.Reddit('ClientSecrets')
@@ -64,7 +71,8 @@ class TickerCounts:
             for comment in submission.comments.list():
                 yield Comment(
                         id,
-                        comment.body
+                        comment.body,
+                        comment.created_utc
                 )
 
 
@@ -74,6 +82,7 @@ class TickerCounts:
         # Extract tickers from titles & count them
         tickers = df_posts['title'].apply(self.extract_ticker)
         counts = Counter(chain.from_iterable(tickers))
+
 
         # Extract tickers from comments & count them
         df_comments = pd.DataFrame(self._get_comments(df_posts['id']))
