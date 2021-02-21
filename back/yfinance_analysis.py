@@ -52,6 +52,16 @@ class FinanceAnalysis:
         ticker_name = ticker.info.get('longName')
         ticker_industry = ticker.info.get('industry')
 
+        ticker = getattr(self.tickers.tickers, ticker)
+        try:
+            ticker_name = ticker.info.get('longName')
+        except:
+            ticker_name = 'missing_longName'
+
+        try:
+            ticker_industry = ticker.info.get('industry')
+        except:
+            ticker_industry = 'missing_industry'
         df_hist_1mo = self.data[ticker.ticker]
         df_hist_5d = df_hist_1mo.iloc[-5:]
         df_hist_1d = df_hist_1mo.iloc[-1:]
